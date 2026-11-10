@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>新民國小 - 放學動線自動輪播錄影版</title>
+<style>
+  body { font-family: "微軟正黑體", sans-serif; text-align: center; background-color: #f4f6f8; padding: 20px; margin: 0; }
+  h2 { color: #333; margin-bottom: 5px; }
+  .instruction { margin-bottom: 20px; color: #666; font-size: 16px; }
+  
+  /* 按鈕區塊 */
+  .btn-container { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; max-width: 1100px; margin: 0 auto 20px; }
+  .btn {
+    color: white; border: 3px solid transparent; padding: 10px 16px; border-radius: 8px;
+    font-size: 16px; font-weight: bold; cursor: pointer; transition: all 0.2s;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.1); filter: brightness(0.95);
+  }
+  .btn:hover { filter: brightness(1.1); transform: translateY(-2px); }
+  .btn.active { filter: brightness(1.1); transform: scale(1.05); border: 3px solid #333; box-shadow: 0 0 12px rgba(0,0,0,0.3); }
+
+  /* 出口提示文字區塊 */
+  #doorInfoBox {
+    background-color: #fff; border: 3px solid #ccc; border-radius: 10px;
+    padding: 15px; max-width: 650px; margin: 0 auto 20px; font-size: 20px; font-weight: bold;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.05); display: none;
+  }
+  .info-route-name { font-size: 24px; margin-bottom: 8px; display: block; font-weight: bold; transition: color 0.3s; }
+  .door-text { margin: 0 15px; font-weight: bold; }
+
+  /* 地圖區塊設定 */
+  .map-wrapper {
+    position: relative; width: 100%; max-width: 1200px; margin: 0 auto;
+    border: 1px solid #ccc; background-color: white; box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+  }
+  .map-wrapper img { width: 100%; height: auto; display: block; }
+  
+  /* SVG 畫布 */
+  .map-wrapper svg {
+    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 10; pointer-events: none; 
+  }
+
+  /* 基礎路徑樣式 */
+  .route-line {
+    fill: none; stroke-width: 6; stroke-linecap: round; stroke-linejoin: round;
+  }
+</style>
+</head>
+<body>
+
+  <h2>🏫 新民國小 - 放學動線動畫系統</h2>
+  <p class="instruction">🎥 系統正自動展示全校各路隊動線，請準備螢幕錄影。</p>
+
+  <!-- 顏色按鈕區塊 -->
+  <div class="btn-container">
+    <button class="btn" id="btn-green" style="background-color: #009900;" onclick="manualPlay('green')">綠色線 (樓梯6、7)</button>
+    <button class="btn" id="btn-orange" style="background-color: #FF6600;" onclick="manualPlay('orange')">橘色線 (樓梯5)</button>
+    <button class="btn" id="btn-purple" style="background-color: #9933FF;" onclick="manualPlay('purple')">紫色線 (樓梯8)</button>
+    <button class="btn" id="btn-pink" style="background-color: #FF66B2; color: #333;" onclick="manualPlay('pink')">粉紅線 (樓梯3)</button>
+    <button class="btn" id="btn-lightgreen" style="background-color: #32CD32; color: #333;" onclick="manualPlay('lightgreen')">萊姆綠線 (樓梯4)</button>
+    <button class="btn" id="btn-blue" style="background-color: #0000CC;" onclick="manualPlay('blue')">深藍線 (樓梯1)</button>
+    <button class="btn" id="btn-yellow" style="background-color: #FFCC00; color: #333;" onclick="manualPlay('yellow')">黃色線 (樓梯2)</button>
+    <button class="btn" id="btn-all" style="background-color: #333333;" onclick="manualPlay('all')">🌟 全校總路線圖</button>
+  </div>
+
+  <!-- 出口提示區塊 -->
+  <div id="doorInfoBox">
+    <span id="boxTitle" class="info-route-name"></span>
+    <span id="boxFront" class="door-text"></span>
+    <span id="boxBack" class="door-text"></span>
+  </div>
+
+  <!-- 地圖區塊 -->
+  <div class="map-wrapper">
+    <img src="clean_map.png" alt="新民國小地圖">
+    <svg id="mySvg" viewBox="0 0 1200 600" preserveAspectRatio="none">
+      <defs>
+        <polygon id="arrow-shape" points="-10,-5 -10,5 10,0" />
+      </defs>
+      <g id="svgContainer"></g>
+    </svg>
+  </div>
+
+  <script>
+    // 🎯 座標資料庫
+    var routeData = {
+      'green': {
+        name: '綠色路線 (樓梯6、7)', colorCode: '#009900',
+        p1: { d: 'M 235,341 L 290,341 L 290,500 L 675,500 L 675,550', color: '#009900', label: '前門', type: '綠色線' },
+        p2: { d: 'M 210,341 L 150,341 L 150,230 L 290,230 L 290,150 L 680,150 L 680,115', color: '#009900', label: '後門', type: '綠色線' }
+      },
+      'orange': {
+        name: '橘色路線 (樓梯5)', colorCode: '#FF6600',
+        p1: { d: 'M 420,350 L 665,350 L 665,533', color: '#FF6600', label: '前門', type: '橘色線' },
+        p2: { d: 'M 420,340 L 665,340 L 665,220 L 310,220 L 310,150 L 685,150 L 685,115', color: '#FF6600', label: '後門', type: '橘色線' }
+      },
+      'purple': {
+        name: '紫色路線 (樓梯8)', colorCode: '#9933FF',
+        p1: { d: 'M 548,477 L 655,477 L 655,550', color: '#9933FF', label: '前門', type: '紫色線' },
+        p2: { d: 'M 537,465 L 537,350 L 655,350 L 655,220 L 320,220 L 320,155 L 670,150 L 670,110', color: '#9933FF', label: '後門', type: '紫色線' }
+      },
+      'pink': {
+        name: '粉紅路線 (樓梯3)', colorCode: '#FF66B2',
+        p1: { d: 'M 1057,379 L 1057,360 L 740,360 L 740,550', color: '#FF66B2', label: '前門', type: '粉紅線' },
+        p2: { d: 'M 1057,379 L 1057,348 L 1000,348 L 1000,213 L 1035,213 L 1035,154 L 745,154 L 745,110', color: '#FF66B2', label: '後門', type: '粉紅線' }
+      },
+      'lightgreen': {
+        name: '萊姆綠路線 (樓梯4)', colorCode: '#32CD32',
+        p1: { d: 'M 877,350 L 710,350 L 710,550', color: '#32CD32', label: '前門', type: '萊姆綠線' },
+        p2: { d: 'M 877,340 L 710,340 L 710,220 L 1025,220 L 1025,154 L 755,154 L 755,110', color: '#32CD32', label: '後門', type: '萊姆綠線' }
+      },
+      'blue': {
+        name: '深藍路線 (樓梯1)', colorCode: '#0000CC',
+        p1: { d: 'M 849,478 L 849,500 L 765,500 L 765,550', color: '#0000CC', label: '前門', type: '深藍線' },
+        p2: { d: 'M 870,478 L 1010,478 L 1010,218 L 1045,218 L 1045,152 L 775,152 L 775,115', color: '#0000CC', label: '後門', type: '深藍線' }
+      },
+      'yellow': {
+        name: '黃色路線 (樓梯2)', colorCode: '#FFCC00',
+        p1: { d: 'M 1047,468 L 1014,468 L 1014,508 L 785,508 L 785,550', color: '#FFCC00', label: '前門', type: '黃色線' },
+        p2: { d: 'M 1047,463 L 1014,463 L 1014,215 L 1050,215 L 1050,152 L 785,152 L 785,115', color: '#FFCC00', label: '後門', type: '黃色線' }
+      }
+    };
+
+    let activeAnimations = [];
+    let autoPlayTimer = null;
+    const routeKeys = ['green', 'orange', 'purple', 'pink', 'lightgreen', 'blue', 'yellow', 'all'];
+    let currentIndex = 0;
+
+    function playColorRoute(colorKey) {
+      activeAnimations.forEach(anim => cancelAnimationFrame(anim));
+      activeAnimations = [];
+
+      var buttons = document.getElementsByClassName('btn');
+      for (var i = 0; i < buttons.length; i++) {
+        buttons[i].classList.remove('active');
+      }
+      var activeBtn = document.getElementById('btn-' + colorKey);
+      if (activeBtn) activeBtn.classList.add('active');
+
+      var container = document.getElementById('svgContainer');
+      var infoBox = document.getElementById('doorInfoBox');
+
+      if (colorKey === 'all') {
+        infoBox.style.display = 'block';
+        infoBox.style.borderColor = '#333';
+        document.getElementById('boxTitle').innerHTML = '🌟 新民國小全校放學總路線圖';
+        document.getElementById('boxTitle').style.color = '#333';
+        document.getElementById('boxFront').innerHTML = '➔ 包含所有樓梯前往前門之動線';
+        document.getElementById('boxBack').innerHTML = '➔ 包含所有樓梯前往後門之動線';
+        document.getElementById('boxFront').style.color = '#000';
+        document.getElementById('boxBack').style.color = '#000';
+
+        let htmlContent = '';
+        let keys = Object.keys(routeData);
+        keys.forEach(k => {
+          let r = routeData[k];
+          let p1End = getEndPoint(r.p1.d);
+          let p2End = getEndPoint(r.p2.d);
+
+          htmlContent += `
+            <path class="route-line" d="${r.p1.d}" style="stroke: ${r.p1.color}; opacity: 0.85;" />
+            <use href="#arrow-shape" fill="${r.p1.color}" transform="translate(${p1End.x}, ${p1End.y}) rotate(90) scale(1.5)" />
+            
+            <path class="route-line" d="${r.p2.d}" style="stroke: ${r.p2.color}; opacity: 0.85;" />
+            <use href="#arrow-shape" fill="${r.p2.color}" transform="translate(${p2End.x}, ${p2End.y}) rotate(-90) scale(1.5)" />
+          `;
+        });
+        container.innerHTML = htmlContent;
+
+        document.querySelectorAll('.route-line').forEach(p => {
+          let len = p.getTotalLength();
+          p.style.strokeDasharray = len;
+          p.style.strokeDashoffset = 0;
+        });
+        return;
+      }
+
+      var route = routeData[colorKey];
+
+      infoBox.style.display = 'block';
+      infoBox.style.borderColor = route.colorCode;
+      
+      document.getElementById('boxTitle').innerHTML = '🚶‍♂️ ' + route.name;
+      document.getElementById('boxTitle').style.color = route.colorCode;
+      document.getElementById('boxFront').innerHTML = '➔ 往 ' + route.p1.label + ' (請走' + route.p1.type + ')';
+      document.getElementById('boxFront').style.color = route.p1.color;
+      document.getElementById('boxBack').innerHTML = '➔ 往 ' + route.p2.label + ' (請走' + route.p2.type + ')';
+      document.getElementById('boxBack').style.color = (route.p2.color === '#333333') ? '#555555' : route.p2.color;
+
+      container.innerHTML = `
+        <path id="path1" class="route-line" d="${route.p1.d}" style="stroke: ${route.p1.color};" />
+        <use id="arrow1" href="#arrow-shape" fill="${route.p1.color}" style="opacity: 0;" />
+
+        <path id="path2" class="route-line" d="${route.p2.d}" style="stroke: ${route.p2.color};" />
+        <use id="arrow2" href="#arrow-shape" fill="${route.p2.color}" style="opacity: 0;" />
+      `;
+
+      requestAnimationFrame(function() {
+        ['path1', 'path2'].forEach(function(pathId, index) {
+          var path = document.getElementById(pathId);
+          var arrow = document.getElementById('arrow' + (index + 1));
+          
+          if (path && arrow) {
+            var length = path.getTotalLength();
+            path.style.strokeDasharray = length;
+            path.style.strokeDashoffset = length;
+            arrow.style.opacity = "1";
+
+            var duration = 3000; // 3 秒
+            var startTime = null;
+
+            function step(timestamp) {
+              if (!startTime) startTime = timestamp;
+              var progress = timestamp - startTime;
+              var percent = Math.min(progress / duration, 1);
+
+              path.style.strokeDashoffset = length * (1 - percent);
+
+              var point = path.getPointAtLength(length * percent);
+              var nextPoint = path.getPointAtLength(Math.min(length * percent + 1, length));
+              var angle = Math.atan2(nextPoint.y - point.y, nextPoint.x - point.x) * (180 / Math.PI);
+
+              if (percent === 1) {
+                if (index === 0) {
+                  angle = 90;   // 前門終點：強制朝向正南方
+                } else {
+                  angle = -90;  // 後門終點：強制朝向正北方
+                }
+              }
+
+              arrow.setAttribute('transform', `translate(${point.x}, ${point.y}) rotate(${angle}) scale(1.5)`);
+
+              if (percent < 1) {
+                var animId = requestAnimationFrame(step);
+                activeAnimations.push(animId);
+              }
+            }
+
+            var animId = requestAnimationFrame(step);
+            activeAnimations.push(animId);
+          }
+        });
+      });
+    }
+
+    function getEndPoint(pathStr) {
+      let parts = pathStr.trim().split(/\s+/);
+      let lastCoord = parts[parts.length - 1];
+      if (lastCoord.includes(',')) {
+        let coords = lastCoord.split(',');
+        return { x: parseFloat(coords[0]), y: parseFloat(coords[1]) };
+      } else {
+        let x = parseFloat(parts[parts.length - 2]);
+        let y = parseFloat(parts[parts.length - 1]);
+        return { x: x, y: y };
+      }
+    }
+
+    function manualPlay(colorKey) {
+      if (autoPlayTimer) clearInterval(autoPlayTimer);
+      currentIndex = routeKeys.indexOf(colorKey);
+      playColorRoute(colorKey);
+    }
+
+    function startAutoPlay() {
+      playColorRoute(routeKeys[currentIndex]);
+      autoPlayTimer = setInterval(function() {
+        currentIndex = (currentIndex + 1) % routeKeys.length;
+        playColorRoute(routeKeys[currentIndex]);
+      }, 4500); // 每 4.5 秒切換下一條路線
+    }
+
+    window.onload = function() {
+      setTimeout(function() {
+        startAutoPlay(); // 網頁一開機自動開始輪播
+      }, 500);
+    };
+  </script>
+
+</body>
+</html>
